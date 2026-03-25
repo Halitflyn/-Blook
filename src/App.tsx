@@ -4,9 +4,10 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ReactFlow, Background, Controls, MiniMap, useNodesState, useEdgesState, Panel, Node, Edge } from '@xyflow/react';
+import { ReactFlow, Background, Controls, MiniMap, useNodesState, useEdgesState, Panel, Node, Edge, useReactFlow, getNodesBounds, getViewportForBounds } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Download, Code2, Undo2, Redo2, LayoutTemplate } from 'lucide-react';
+import { toPng, toSvg } from 'html-to-image';
 import { parseToAST } from './lib/parser';
 import { astToGraph } from './lib/graph';
 import { StartNode, EndNode, ProcessNode, DecisionNode, IONode, LoopNode } from './components/nodes';
@@ -24,6 +25,78 @@ const nodeTypes = {
 const edgeTypes = {
   custom: CustomEdge,
 };
+
+function ExportButtons() {
+  const { getNodes } = useReactFlow();
+
+  const downloadImage = async (format: 'png' | 'svg') => {
+    const nodes = getNodes();
+    if (nodes.length === 0) return;
+
+    const nodesBounds = getNodesBounds(nodes);
+    const padding = 50;
+    const width = nodesBounds.width + padding * 2;
+    const height = nodesBounds.height + padding * 2;
+
+    const viewportElement = document.querySelector('.react-flow__viewport') as HTMLElement;
+    if (!viewportElement) return;
+
+    const viewport = getViewportForBounds(
+      nodesBounds,
+      width,
+      height,
+      0.5,
+      2,
+      padding
+    );
+
+    const options = {
+      backgroundColor: '#f8fafc',
+      width,
+      height,
+      style: {
+        width: `${width}px`,
+        height: `${height}px`,
+        transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
+      },
+    };
+
+    try {
+      const dataUrl = format === 'png' 
+        ? await toPng(viewportElement, options)
+        : await toSvg(viewportElement, options);
+        
+      const a = document.createElement('a');
+      a.setAttribute('download', `flowchart.${format}`);
+      a.setAttribute('href', dataUrl);
+      a.click();
+    } catch (err) {
+      console.error('Export error:', err);
+      alert('Помилка експорту. Спробуйте ще раз.');
+    }
+  };
+
+  return (
+    <div className="flex gap-2">
+      <button 
+        onClick={() => downloadImage('png')}
+        className="flex items-center gap-2 px-4 py-2 bg-white text-slate-700 font-medium rounded-lg shadow-md hover:bg-slate-50 hover:text-slate-900 transition-colors border border-slate-200"
+        title="Завантажити як PNG"
+      >
+        <Download className="w-4 h-4" />
+        <span>PNG</span>
+      </button>
+      <button 
+        onClick={() => downloadImage('svg')}
+        className="flex items-center gap-2 px-4 py-2 bg-white text-slate-700 font-medium rounded-lg shadow-md hover:bg-slate-50 hover:text-slate-900 transition-colors border border-slate-200"
+        title="Завантажити як SVG"
+      >
+        <Download className="w-4 h-4" />
+        <span>SVG</span>
+      </button>
+    </div>
+  );
+}
 
 const defaultCode = `#include <iostream>
 #include <cmath>
@@ -249,15 +322,7 @@ export default function App() {
               <LayoutTemplate className="w-4 h-4" />
               <span>Вирівняти</span>
             </button>
-            <button 
-              onClick={() => {
-                alert('Функція завантаження в розробці. Використовуйте скріншот.');
-              }}
-              className="flex items-center gap-2 px-4 py-2 bg-white text-slate-700 font-medium rounded-lg shadow-md hover:bg-slate-50 hover:text-slate-900 transition-colors border border-slate-200"
-            >
-              <Download className="w-4 h-4" />
-              <span>Експорт</span>
-            </button>
+            <ExportButtons />
           </Panel>
         </ReactFlow>
       </div>
