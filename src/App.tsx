@@ -165,11 +165,18 @@ export default function App() {
 
   const nodePrefsRef = useRef<Record<string, boolean>>({});
   const edgeOffsetsRef = useRef<Record<string, {x: number, y: number}>>({});
+  
+  const nodesRef = useRef(nodes);
+  const edgesRef = useRef(edges);
+  useEffect(() => {
+    nodesRef.current = nodes;
+    edgesRef.current = edges;
+  }, [nodes, edges]);
 
   const saveHistory = useCallback(() => {
-    setPast((p) => [...p, { nodes, edges }]);
+    setPast((p) => [...p, { nodes: nodesRef.current, edges: edgesRef.current }]);
     setFuture([]);
-  }, [nodes, edges]);
+  }, []);
 
   const undo = useCallback(() => {
     if (past.length === 0) return;
@@ -197,7 +204,23 @@ export default function App() {
 
   const handleEdgeOffsetChange = useCallback((id: string, offset: {x: number, y: number}) => {
     edgeOffsetsRef.current[id] = offset;
-  }, []);
+    
+    // Update the edge in state so React Flow knows about the change immediately
+    setEdges((eds) =>
+      eds.map((edge) => {
+        if (edge.id === id) {
+          return {
+            ...edge,
+            data: {
+              ...edge.data,
+              offset,
+            },
+          };
+        }
+        return edge;
+      })
+    );
+  }, [setEdges]);
 
   const generateFlowchart = useCallback(() => {
     try {
