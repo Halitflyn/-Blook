@@ -1,4 +1,4 @@
-import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath } from '@xyflow/react';
+import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath, useReactFlow } from '@xyflow/react';
 import { useState, useRef, useEffect } from 'react';
 
 export function CustomEdge({
@@ -23,6 +23,7 @@ export function CustomEdge({
     borderRadius: 0,
   });
 
+  const { getZoom } = useReactFlow();
   const [localOffset, setLocalOffset] = useState(data?.offset || { x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const dragStart = useRef({ x: 0, y: 0 });
@@ -33,16 +34,21 @@ export function CustomEdge({
 
   const onPointerDown = (e: React.PointerEvent) => {
     e.currentTarget.setPointerCapture(e.pointerId);
-    dragStart.current = { x: e.clientX - localOffset.x, y: e.clientY - localOffset.y };
+    const zoom = getZoom();
+    dragStart.current = { 
+      x: e.clientX - localOffset.x * zoom, 
+      y: e.clientY - localOffset.y * zoom 
+    };
     setIsDragging(true);
     e.stopPropagation();
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
     if (isDragging) {
+      const zoom = getZoom();
       setLocalOffset({
-        x: e.clientX - dragStart.current.x,
-        y: e.clientY - dragStart.current.y,
+        x: (e.clientX - dragStart.current.x) / zoom,
+        y: (e.clientY - dragStart.current.y) / zoom,
       });
       e.stopPropagation();
     }
