@@ -4,9 +4,9 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ReactFlow, Background, Controls, MiniMap, useNodesState, useEdgesState, Panel } from '@xyflow/react';
+import { ReactFlow, Background, Controls, MiniMap, useNodesState, useEdgesState, Panel, Node, Edge } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Download, Code2 } from 'lucide-react';
+import { Download, Code2, Undo2, Redo2, LayoutTemplate } from 'lucide-react';
 import { parseToAST } from './lib/parser';
 import { astToGraph } from './lib/graph';
 import { StartNode, EndNode, ProcessNode, DecisionNode, IONode, LoopNode } from './components/nodes';
@@ -84,14 +84,42 @@ export default function App() {
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [error, setError] = useState<string | null>(null);
   const [layoutTrigger, setLayoutTrigger] = useState(0);
+  const [forceLayout, setForceLayout] = useState(false);
+
+  const [past, setPast] = useState<{nodes: Node[], edges: Edge[]}[]>([]);
+  const [future, setFuture] = useState<{nodes: Node[], edges: Edge[]}[]>([]);
 
   const nodePrefsRef = useRef<Record<string, boolean>>({});
   const edgeOffsetsRef = useRef<Record<string, {x: number, y: number}>>({});
 
+  const saveHistory = useCallback(() => {
+    setPast((p) => [...p, { nodes, edges }]);
+    setFuture([]);
+  }, [nodes, edges]);
+
+  const undo = useCallback(() => {
+    if (past.length === 0) return;
+    const previous = past[past.length - 1];
+    setPast((p) => p.slice(0, -1));
+    setFuture((f) => [{ nodes, edges }, ...f]);
+    setNodes(previous.nodes);
+    setEdges(previous.edges);
+  }, [past, nodes, edges, setNodes, setEdges]);
+
+  const redo = useCallback(() => {
+    if (future.length === 0) return;
+    const next = future[0];
+    setFuture((f) => f.slice(1));
+    setPast((p) => [...p, { nodes, edges }]);
+    setNodes(next.nodes);
+    setEdges(next.edges);
+  }, [future, nodes, edges, setNodes, setEdges]);
+
   const handleToggleDirection = useCallback((id: string) => {
+    saveHistory();
     nodePrefsRef.current[id] = !nodePrefsRef.current[id];
     setLayoutTrigger(prev => prev + 1);
-  }, []);
+  }, [saveHistory]);
 
   const handleEdgeOffsetChange = useCallback((id: string, offset: {x: number, y: number}) => {
     edgeOffsetsRef.current[id] = offset;
@@ -108,13 +136,25 @@ export default function App() {
         edgeOffsetsRef.current,
         handleEdgeOffsetChange
       );
-      setNodes(layoutedNodes);
+      
+      setNodes((currentNodes) => {
+        if (forceLayout) return layoutedNodes;
+        
+        const positionMap = new Map(currentNodes.map(n => [n.id, n.position]));
+        return layoutedNodes.map(node => {
+          if (positionMap.has(node.id)) {
+            return { ...node, position: positionMap.get(node.id)! };
+          }
+          return node;
+        });
+      });
       setEdges(layoutedEdges);
+      setForceLayout(false);
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Помилка парсингу коду');
     }
-  }, [code, setNodes, setEdges, handleToggleDirection, handleEdgeOffsetChange]);
+  }, [code, setNodes, setEdges, handleToggleDirection, handleEdgeOffsetChange, forceLayout]);
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -122,6 +162,12 @@ export default function App() {
     }, 500);
     return () => clearTimeout(timeout);
   }, [code, layoutTrigger, generateFlowchart]);
+
+  const handleAutoLayout = () => {
+    saveHistory();
+    setForceLayout(true);
+    setLayoutTrigger(prev => prev + 1);
+  };
 
   return (
     <div className="flex h-screen w-full bg-slate-50 overflow-hidden font-sans">
@@ -142,7 +188,10 @@ export default function App() {
         </div>
         <textarea
           value={code}
-          onChange={(e) => setCode(e.target.value)}
+          onChange={(e) => {
+            setCode(e.target.value);
+            setForceLayout(true); // Auto-layout when code changes
+          }}
           className="flex-1 w-full p-4 bg-transparent text-slate-300 font-mono text-sm leading-relaxed resize-none focus:outline-none focus:ring-0"
           spellCheck={false}
         />
@@ -155,6 +204,7 @@ export default function App() {
           edges={edges}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
+          onNodeDragStart={saveHistory}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           fitView
@@ -173,7 +223,32 @@ export default function App() {
               return '#3b82f6';
             }}
           />
-          <Panel position="top-right" className="m-4">
+          <Panel position="top-right" className="m-4 flex gap-2">
+            <button 
+              onClick={undo}
+              disabled={past.length === 0}
+              className="flex items-center justify-center w-10 h-10 bg-white text-slate-700 rounded-lg shadow-md hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-slate-200"
+              title="Скасувати (Undo)"
+            >
+              <Undo2 className="w-5 h-5" />
+            </button>
+            <button 
+              onClick={redo}
+              disabled={future.length === 0}
+              className="flex items-center justify-center w-10 h-10 bg-white text-slate-700 rounded-lg shadow-md hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-slate-200"
+              title="Повторити (Redo)"
+            >
+              <Redo2 className="w-5 h-5" />
+            </button>
+            <div className="w-px h-10 bg-slate-300 mx-1"></div>
+            <button 
+              onClick={handleAutoLayout}
+              className="flex items-center gap-2 px-4 py-2 bg-white text-slate-700 font-medium rounded-lg shadow-md hover:bg-slate-50 hover:text-slate-900 transition-colors border border-slate-200"
+              title="Автоматично вирівняти всі блоки"
+            >
+              <LayoutTemplate className="w-4 h-4" />
+              <span>Вирівняти</span>
+            </button>
             <button 
               onClick={() => {
                 alert('Функція завантаження в розробці. Використовуйте скріншот.');
